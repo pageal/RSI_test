@@ -96,7 +96,7 @@ class YFStock():
         data_frame = self.download_historical_prices(ticker=self.ticker, start_date=(dt_now - dt.timedelta(minutes=hours_back*60)), end_date=dt_now, interval="1m")
         return data_frame
 
-def rsi(df, periods=14, ema=True):
+def rsi(df, periods=14, ema=False):
     """
     Returns a pd.Series with the relative strength index.
     """
@@ -111,6 +111,17 @@ def rsi(df, periods=14, ema=True):
         # Use exponential moving average
         ma_up = up.ewm(com=periods - 1, adjust=True, min_periods=periods).mean()
         ma_down = down.ewm(com=periods - 1, adjust=True, min_periods=periods).mean()
+
+
+        #tema = 3xEMA - 3*EMA(EMA)+EMA(EMA(EMA))
+        two_ma_up = ma_up.ewm(com=periods - 1, adjust=True, min_periods=periods).mean()
+        three_ma_up = two_ma_up.ewm(com=periods - 1, adjust=True, min_periods=periods).mean()
+        ma_up = 3*ma_up - 3*two_ma_up + three_ma_up
+
+        two_ma_down = ma_down.ewm(com=periods - 1, adjust=True, min_periods=periods).mean()
+        three_ma_down = two_ma_down.ewm(com=periods - 1, adjust=True, min_periods=periods).mean()
+        ma_down = 3*ma_down - 3*two_ma_down + three_ma_down
+
     else:
         # Use simple moving average
         ma_up = up.rolling(window=periods, min_periods=periods).mean()
@@ -138,9 +149,11 @@ def strategy_test(prices, rsi, rsi_length):
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    company = 'TLRY'
+    company = 'GBTC'
+    company = 'ZIM'
     rsi_length = 14
-    test_days = 300
+    rsi_stride_min = 25
+    test_days = 7
 
     '''
     #DAY data read
@@ -154,18 +167,21 @@ if __name__ == '__main__':
 
     #Minute data read
     stock = YFStock(company)
-    test_data = stock.get_historical_prices_min(hours_back=24 * 2)
+    test_data = stock.get_historical_prices_min(hours_back=24 * test_days)
+    #columns: open/close/high/low/volume
     column = "close"
-    #get only every 15th minute
-    test_data = test_data[::5]
+    #get only every Xth minute
+    test_data = test_data[::rsi_stride_min]
 
     #CALCULATE RSI for each data point (starting from rsi_length-th)
     # first rsi_length RSI values will have numpy.nan value as there as not enough information for consistent RSI calculation
     # https://stackoverflow.com/questions/17534106/what-is-the-difference-between-nan-and-none
-    rsi_ema = pta.rsi(test_data[column], length=rsi_length)
+    #rsi_ema = pta.rsi(test_data[column], length=rsi_length, ema=True)
+    rsi_ema = rsi(df=test_data[column], periods=rsi_length, ema=True)
     rsi_sma = rsi(df=test_data[column], periods=rsi_length, ema=False)
 
-    buy_signals, sell_signals = strategy_test(test_data[column], rsi_sma, rsi_length)
+    #buy_signals, sell_signals = strategy_test(test_data[column], rsi_sma, rsi_length)
+    buy_signals, sell_signals = strategy_test(test_data[column], rsi_ema, rsi_length)
 
     fig = plt.figure()
     plt.plot(test_data.index, [70] * len(test_data.index), color="darkgrey", label="overbought")
